@@ -64,8 +64,13 @@ nav_options = [
     "Accountant & Advanced Reports"
 ]
 
-# Directly link the radio button to session state using key="nav"
-st.sidebar.radio("Select Action", nav_options, key="nav")
+# Safe navigation sync without widget conflict
+current_index = nav_options.index(st.session_state.nav) if st.session_state.nav in nav_options else 0
+selected_action = st.sidebar.radio("Select Action", nav_options, index=current_index)
+
+if selected_action != st.session_state.nav:
+    st.session_state.nav = selected_action
+    st.rerun()
 
 def run_query(query, params=()):
     conn = sqlite3.connect('holiday_himalayas.db')
@@ -406,4 +411,4 @@ elif st.session_state.nav == "Accountant & Advanced Reports":
         csv = ledger_df.to_csv(index=False).encode('utf-8')
         st.download_button("Download Accountant Ledger (CSV)", csv, "accountant_ledger.csv", "mime/csv")
     else:
-        st.info("ledger is empty.")
+        st.info("Ledger is empty.")
