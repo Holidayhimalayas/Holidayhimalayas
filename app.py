@@ -46,13 +46,14 @@ def init_db():
 
 init_db()
 
-st.set_page_config(page_title="Holiday Himalayas Accounting Engine", page_icon="🏔️", layout="wide")
+# Updated Page Configuration
+st.set_page_config(page_title="Accounts", page_icon="📊", layout="wide")
 
 # Initialize session state navigation
 if "nav" not in st.session_state:
     st.session_state.nav = "Home (Dashboard)"
 
-st.sidebar.title("🧭 Quick Navigation")
+st.sidebar.title("Navigation")
 nav_options = [
     "Home (Dashboard)", 
     "New Booking", 
@@ -87,8 +88,9 @@ def execute_db(query, params=()):
 
 # --- HOME / DASHBOARD ---
 if st.session_state.nav == "Home (Dashboard)":
-    st.title("🏔️ Holiday Himalayas — Business Command Center")
-    st.write("Simple, conversational business management without accounting clutter.")
+    # Updated Main Title and Description
+    st.title("Accounts")
+    st.write("A simplified accounting tool for your business.")
     
     bookings_df = run_query("SELECT * FROM bookings")
     tx_df = run_query("SELECT * FROM transactions")
@@ -110,7 +112,7 @@ if st.session_state.nav == "Home (Dashboard)":
         total_costs = (bookings_df['hotel_cost'] + bookings_df['transport_cost'] + bookings_df['other_costs']).sum()
     estimated_profit = total_sales - total_costs
 
-    st.subheader("Welcome back! Here is your business at a glance.")
+    st.subheader("Your business at a glance.")
     
     col1, col2, col3 = st.columns(3)
     col1.metric("💰 Money Available in Bank/Cash", f"₹{money_available:,.0f}")
