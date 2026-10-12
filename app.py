@@ -64,7 +64,7 @@ nav_options = [
     "Accountant & Advanced Reports"
 ]
 
-# Safe navigation sync without widget conflict
+# Safe navigation sync
 current_index = nav_options.index(st.session_state.nav) if st.session_state.nav in nav_options else 0
 selected_action = st.sidebar.radio("Select Action", nav_options, index=current_index)
 
@@ -301,7 +301,7 @@ elif st.session_state.nav == "Add an Expense":
 # --- VIEW MY BUSINESS ---
 elif st.session_state.nav == "View My Business":
     st.title("📊 Business Overview & Booking Summaries")
-    tab1, tab2, tab3 = st.tabs(["Bookings Financial Summary", "Money Tracker", "Recent Transactions"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Bookings Financial Summary", "Money Tracker", "Recent Transactions", "🗑️ Delete an Entry"])
     
     with tab1:
         st.subheader("Booking Financial Breakdowns")
@@ -353,6 +353,54 @@ elif st.session_state.nav == "View My Business":
             st.dataframe(tx_df)
         else:
             st.info("No transaction history found.")
+
+    with tab4:
+        st.subheader("🗑️ Delete Incorrect or Canceled Entries")
+        st.write("Permanently remove an entry if you made a mistake or a customer canceled.")
+        
+        delete_type = st.radio("What would you like to delete?", ["A Booking", "A Transaction / Payment", "A Ledger Record"], horizontal=True)
+        
+        if delete_type == "A Booking":
+            bookings_df = run_query("SELECT id, customer_name, trip_name, total_amount FROM bookings")
+            if bookings_df.empty:
+                st.info("No bookings available to delete.")
+            else:
+                b_map = {f"ID #{r.id} | {r.customer_name} - {r.trip_name} (₹{r.total_amount:,.0f})": r.id for _, r in bookings_df.iterrows()}
+                selected_label = st.selectbox("Select Booking to Delete", list(b_map.keys()))
+                del_id = b_map[selected_label]
+                
+                if st.button("🔴 Permanently Delete Selected Booking", type="primary"):
+                    execute_db("DELETE FROM bookings WHERE id = ?", (del_id,))
+                    st.success(f"Booking #{del_id} deleted successfully!")
+                    st.rerun()
+
+        elif delete_type == "A Transaction / Payment":
+            tx_df = run_query("SELECT id, date, tx_type, party_name, amount FROM transactions")
+            if tx_df.empty:
+                st.info("No transactions available to delete.")
+            else:
+                t_map = {f"ID #{r.id} | {r.date} | {r.tx_type} | {r.party_name} - ₹{r.amount:,.0f}": r.id for _, r in tx_df.iterrows()}
+                selected_label = st.selectbox("Select Transaction to Delete", list(t_map.keys()))
+                del_id = t_map[selected_label]
+                
+                if st.button("🔴 Permanently Delete Selected Transaction", type="primary"):
+                    execute_db("DELETE FROM transactions WHERE id = ?", (del_id,))
+                    st.success(f"Transaction #{del_id} deleted successfully!")
+                    st.rerun()
+
+        elif delete_type == "A Ledger Record":
+            ledger_df = run_query("SELECT id, date, account_name, debit, credit, narration FROM ledger")
+            if ledger_df.empty:
+                st.info("No ledger entries available to delete.")
+            else:
+                l_map = {f"ID #{r.id} | {r.date} | {r.account_name} | {r.narration}": r.id for _, r in ledger_df.iterrows()}
+                selected_label = st.selectbox("Select Ledger Entry to Delete", list(l_map.keys()))
+                del_id = l_map[selected_label]
+                
+                if st.button("🔴 Permanently Delete Selected Ledger Record", type="primary"):
+                    execute_db("DELETE FROM ledger WHERE id = ?", (del_id,))
+                    st.success(f"Ledger record #{del_id} deleted successfully!")
+                    st.rerun()
 
 # --- ASK ASSISTANT ---
 elif st.session_state.nav == "Ask Assistant":
