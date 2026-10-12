@@ -48,6 +48,7 @@ init_db()
 
 st.set_page_config(page_title="Holiday Himalayas Accounting Engine", page_icon="🏔️", layout="wide")
 
+# Initialize session state navigation
 if "nav" not in st.session_state:
     st.session_state.nav = "Home (Dashboard)"
 
@@ -63,9 +64,8 @@ nav_options = [
     "Accountant & Advanced Reports"
 ]
 
-current_index = nav_options.index(st.session_state.nav) if st.session_state.nav in nav_options else 0
-selected_action = st.sidebar.radio("Select Action", nav_options, index=current_index, key="nav_radio")
-st.session_state.nav = selected_action
+# Directly link the radio button to session state using key="nav"
+st.sidebar.radio("Select Action", nav_options, key="nav")
 
 def run_query(query, params=()):
     conn = sqlite3.connect('holiday_himalayas.db')
@@ -122,23 +122,23 @@ if st.session_state.nav == "Home (Dashboard)":
     
     b1, b2, b3, b4, b5 = st.columns(5)
     with b1:
-        if st.button("📋 New Booking"):
+        if st.button("📋 New Booking", use_container_width=True):
             st.session_state.nav = "New Booking"
             st.rerun()
     with b2:
-        if st.button("📥 Money Received"):
+        if st.button("📥 Money Received", use_container_width=True):
             st.session_state.nav = "Money Received"
             st.rerun()
     with b3:
-        if st.button("💸 Money Paid"):
+        if st.button("💸 Money Paid", use_container_width=True):
             st.session_state.nav = "Money Paid"
             st.rerun()
     with b4:
-        if st.button("🧾 Add Expense"):
+        if st.button("🧾 Add Expense", use_container_width=True):
             st.session_state.nav = "Add an Expense"
             st.rerun()
     with b5:
-        if st.button("📊 View Business"):
+        if st.button("📊 View Business", use_container_width=True):
             st.session_state.nav = "View My Business"
             st.rerun()
 
@@ -406,4 +406,4 @@ elif st.session_state.nav == "Accountant & Advanced Reports":
         csv = ledger_df.to_csv(index=False).encode('utf-8')
         st.download_button("Download Accountant Ledger (CSV)", csv, "accountant_ledger.csv", "mime/csv")
     else:
-        st.info("Ledger is empty.")
+        st.info("ledger is empty.")
