@@ -53,6 +53,12 @@ st.set_page_config(page_title="Accounts", page_icon="📊", layout="wide")
 if "nav" not in st.session_state:
     st.session_state.nav = "Home (Dashboard)"
 
+# Display Logo in Sidebar
+try:
+    st.sidebar.image("Grayscale on transparent.png", use_container_width=True)
+except Exception:
+    pass
+
 st.sidebar.title("Navigation")
 nav_options = [
     "Home (Dashboard)", 
@@ -88,7 +94,6 @@ def execute_db(query, params=()):
 
 # --- HOME / DASHBOARD ---
 if st.session_state.nav == "Home (Dashboard)":
-    # Updated Main Title and Description
     st.title("Accounts")
     st.write("A simplified accounting tool for your business.")
     
