@@ -46,7 +46,7 @@ def init_db():
 
 init_db()
 
-# Updated Page Configuration
+# Page Configuration
 st.set_page_config(page_title="Accounts", page_icon="📊", layout="wide")
 
 # Initialize session state navigation
@@ -55,9 +55,9 @@ if "nav" not in st.session_state:
 
 # Display Logo in Sidebar
 try:
-    st.sidebar.image("Grayscale on transparent.png", use_container_width=True)
+    st.sidebar.image("logo.png", use_container_width=True)
 except Exception:
-    pass
+    st.sidebar.info("Upload 'logo.png' to GitHub to display your logo here.")
 
 st.sidebar.title("Navigation")
 nav_options = [
