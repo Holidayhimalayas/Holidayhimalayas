@@ -1,53 +1,63 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 from datetime import datetime, date
-
-def init_db():
-    conn = sqlite3.connect('holiday_himalayas.db')
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS bookings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            customer_name TEXT,
-            trip_name TEXT,
-            total_amount REAL,
-            hotel_cost REAL,
-            transport_cost REAL,
-            other_costs REAL,
-            created_date TEXT
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            tx_type TEXT,
-            party_name TEXT,
-            category TEXT,
-            amount REAL,
-            payment_method TEXT,
-            notes TEXT,
-            booking_id INTEGER
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS ledger (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            account_name TEXT,
-            debit REAL,
-            credit REAL,
-            narration TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-init_db()
+from sqlalchemy import create_engine, text
 
 # Page Configuration
 st.set_page_config(page_title="Accounts", page_icon="📊", layout="wide")
+
+# Database Connection via Secrets or fallback
+db_url = st.secrets.get("DATABASE_URL", None)
+
+if not db_url:
+    st.error("⚠️ Database connection URL not found! Please set DATABASE_URL in Streamlit Secrets.")
+    st.stop()
+
+# Fix URI scheme if needed (PostgreSQL requirement)
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(db_url, pool_pre_ping=True)
+
+def init_db():
+    with engine.begin() as conn:
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS bookings (
+                id SERIAL PRIMARY KEY,
+                customer_name TEXT,
+                trip_name TEXT,
+                total_amount REAL,
+                hotel_cost REAL,
+                transport_cost REAL,
+                other_costs REAL,
+                created_date TEXT
+            );
+        '''))
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS transactions (
+                id SERIAL PRIMARY KEY,
+                date TEXT,
+                tx_type TEXT,
+                party_name TEXT,
+                category TEXT,
+                amount REAL,
+                payment_method TEXT,
+                notes TEXT,
+                booking_id INTEGER
+            );
+        '''))
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS ledger (
+                id SERIAL PRIMARY KEY,
+                date TEXT,
+                account_name TEXT,
+                debit REAL,
+                credit REAL,
+                narration TEXT
+            );
+        '''))
+
+init_db()
 
 # Initialize session state navigation
 if "nav" not in st.session_state:
@@ -79,18 +89,13 @@ if selected_action != st.session_state.nav:
     st.session_state.nav = selected_action
     st.rerun()
 
-def run_query(query, params=()):
-    conn = sqlite3.connect('holiday_himalayas.db')
-    df = pd.read_sql_query(query, conn, params=params)
-    conn.close()
-    return df
+def run_query(query_str, params={}):
+    with engine.connect() as conn:
+        return pd.read_sql_query(text(query_str), conn, params=params)
 
-def execute_db(query, params=()):
-    conn = sqlite3.connect('holiday_himalayas.db')
-    c = conn.cursor()
-    c.execute(query, params)
-    conn.commit()
-    conn.close()
+def execute_db(query_str, params={}):
+    with engine.begin() as conn:
+        conn.execute(text(query_str), params)
 
 # --- HOME / DASHBOARD ---
 if st.session_state.nav == "Home (Dashboard)":
@@ -171,16 +176,16 @@ elif st.session_state.nav == "New Booking":
             if customer_name and trip_name:
                 date_str = tx_date.strftime("%Y-%m-%d")
                 execute_db(
-                    "INSERT INTO bookings (customer_name, trip_name, total_amount, hotel_cost, transport_cost, other_costs, created_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (customer_name, trip_name, total_amount, hotel_cost, transport_cost, other_costs, date_str)
+                    "INSERT INTO bookings (customer_name, trip_name, total_amount, hotel_cost, transport_cost, other_costs, created_date) VALUES (:cn, :tn, :ta, :hc, :tc, :oc, :cd)",
+                    {"cn": customer_name, "tn": trip_name, "ta": total_amount, "hc": hotel_cost, "tc": transport_cost, "oc": other_costs, "cd": date_str}
                 )
                 execute_db(
-                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (?, ?, ?, ?, ?)",
-                    (date_str, "Customer Receivables", total_amount, 0, f"Booking #{trip_name} for {customer_name}")
+                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (:d, :an, :deb, :cred, :narr)",
+                    {"d": date_str, "an": "Customer Receivables", "deb": total_amount, "cred": 0, "narr": f"Booking #{trip_name} for {customer_name}"}
                 )
                 execute_db(
-                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (?, ?, ?, ?, ?)",
-                    (date_str, "Sales Revenue", 0, total_amount, f"Revenue from {customer_name}")
+                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (:d, :an, :deb, :cred, :narr)",
+                    {"d": date_str, "an": "Sales Revenue", "deb": 0, "cred": total_amount, "narr": f"Revenue from {customer_name}"}
                 )
                 st.success(f"Booking for {customer_name} successfully saved!")
             else:
@@ -194,12 +199,12 @@ elif st.session_state.nav == "Money Received":
     if bookings_df.empty:
         st.warning("No bookings found. Please create a booking first!")
     else:
-        booking_options = {f"Trip #{row.id}: {row.trip_name} - {row.customer_name}": row.id for _, row in bookings_df.iterrows()}
+        booking_options = {f"Trip #{row['id']}: {row['trip_name']} - {row['customer_name']}": row['id'] for _, row in bookings_df.iterrows()}
         
         with st.form("received_form"):
             tx_date = st.date_input("Payment Received Date", value=date.today())
             selected_booking_label = st.selectbox("Select Booking", list(booking_options.keys()))
-            booking_id = booking_options[selected_booking_label]
+            booking_id = int(booking_options[selected_booking_label])
             
             amount = st.number_input("Amount Received (₹)", min_value=0.0, step=500.0)
             payment_method = st.selectbox("Payment Method", ["UPI", "Bank Transfer (NEFT/IMPS/UPI)", "Cash", "Credit Card"])
@@ -212,16 +217,16 @@ elif st.session_state.nav == "Money Received":
                 party_name = selected_row['customer_name']
                 
                 execute_db(
-                    "INSERT INTO transactions (date, tx_type, party_name, category, amount, payment_method, notes, booking_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (date_str, "Money Received", party_name, "Customer Advance/Payment", amount, payment_method, notes, booking_id)
+                    "INSERT INTO transactions (date, tx_type, party_name, category, amount, payment_method, notes, booking_id) VALUES (:d, :txt, :pn, :cat, :amt, :pm, :notes, :bid)",
+                    {"d": date_str, "txt": "Money Received", "pn": party_name, "cat": "Customer Advance/Payment", "amt": amount, "pm": payment_method, "notes": notes, "bid": booking_id}
                 )
                 execute_db(
-                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (?, ?, ?, ?, ?)",
-                    (date_str, "Bank/Cash Account", amount, 0, f"Received from {party_name}")
+                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (:d, :an, :deb, :cred, :narr)",
+                    {"d": date_str, "an": "Bank/Cash Account", "deb": amount, "cred": 0, "narr": f"Received from {party_name}"}
                 )
                 execute_db(
-                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (?, ?, ?, ?, ?)",
-                    (date_str, "Customer Receivables", 0, amount, f"Payment recorded for booking #{booking_id}")
+                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (:d, :an, :deb, :cred, :narr)",
+                    {"d": date_str, "an": "Customer Receivables", "deb": 0, "cred": amount, "narr": f"Payment recorded for booking #{booking_id}"}
                 )
                 st.success("Payment recorded successfully!")
 
@@ -236,9 +241,11 @@ elif st.session_state.nav == "Money Paid":
         if not bookings_df.empty:
             booking_options = {"None / General Business Expense": None}
             for _, row in bookings_df.iterrows():
-                booking_options[f"Trip #{row.id}: {row.trip_name} - {row.customer_name}"] = row.id
+                booking_options[f"Trip #{row['id']}: {row['trip_name']} - {row['customer_name']}"] = row['id']
             selected_booking_label = st.selectbox("Link to Customer Booking / Trip", list(booking_options.keys()))
             booking_id = booking_options[selected_booking_label]
+            if booking_id is not None:
+                booking_id = int(booking_id)
         
         party_name = st.text_input("Supplier / Payee Name (e.g. Sukh Sagar Regency, Transport Provider)")
         category = st.selectbox("Expense Category", ["Hotel Booking", "Transport / Cab", "Guide / Permits", "Food / Meals", "Other Direct Cost", "Office / Overhead Expense"])
@@ -250,19 +257,18 @@ elif st.session_state.nav == "Money Paid":
         if submitted:
             if party_name and amount > 0:
                 date_str = tx_date.strftime("%Y-%m-%d")
-                tx_type = "Money Paid"
                 
                 execute_db(
-                    "INSERT INTO transactions (date, tx_type, party_name, category, amount, payment_method, notes, booking_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (date_str, tx_type, party_name, category, amount, payment_method, notes, booking_id)
+                    "INSERT INTO transactions (date, tx_type, party_name, category, amount, payment_method, notes, booking_id) VALUES (:d, :txt, :pn, :cat, :amt, :pm, :notes, :bid)",
+                    {"d": date_str, "txt": "Money Paid", "pn": party_name, "cat": category, "amt": amount, "pm": payment_method, "notes": notes, "bid": booking_id}
                 )
                 execute_db(
-                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (?, ?, ?, ?, ?)",
-                    (date_str, "Business Expenses / Suppliers", amount, 0, f"{category} paid to {party_name}")
+                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (:d, :an, :deb, :cred, :narr)",
+                    {"d": date_str, "an": "Business Expenses / Suppliers", "deb": amount, "cred": 0, "narr": f"{category} paid to {party_name}"}
                 )
                 execute_db(
-                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (?, ?, ?, ?, ?)",
-                    (date_str, "Bank/Cash Account", 0, amount, f"Paid ₹{amount} via {payment_method}")
+                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (:d, :an, :deb, :cred, :narr)",
+                    {"d": date_str, "an": "Bank/Cash Account", "deb": 0, "cred": amount, "narr": f"Paid ₹{amount} via {payment_method}"}
                 )
                 st.success("Supplier payment recorded successfully!")
             else:
@@ -278,9 +284,11 @@ elif st.session_state.nav == "Add an Expense":
         if not bookings_df.empty:
             booking_options = {"None / General Business Expense": None}
             for _, row in bookings_df.iterrows():
-                booking_options[f"Trip #{row.id}: {row.trip_name} - {row.customer_name}"] = row.id
+                booking_options[f"Trip #{row['id']}: {row['trip_name']} - {row['customer_name']}"] = row['id']
             selected_booking_label = st.selectbox("Link to Customer Booking / Trip", list(booking_options.keys()))
             booking_id = booking_options[selected_booking_label]
+            if booking_id is not None:
+                booking_id = int(booking_id)
         
         party_name = st.text_input("Vendor / Expense Party Name")
         category = st.selectbox("Category", ["Hotel Booking", "Transport / Cab", "Guide / Permits", "Food / Meals", "Other Direct Cost"])
@@ -292,16 +300,16 @@ elif st.session_state.nav == "Add an Expense":
             if party_name and amount > 0:
                 date_str = tx_date.strftime("%Y-%m-%d")
                 execute_db(
-                    "INSERT INTO transactions (date, tx_type, party_name, category, amount, payment_method, notes, booking_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (date_str, "Expense", party_name, category, amount, payment_method, notes, booking_id)
+                    "INSERT INTO transactions (date, tx_type, party_name, category, amount, payment_method, notes, booking_id) VALUES (:d, :txt, :pn, :cat, :amt, :pm, :notes, :bid)",
+                    {"d": date_str, "txt": "Expense", "pn": party_name, "cat": category, "amt": amount, "pm": payment_method, "notes": notes, "bid": booking_id}
                 )
                 execute_db(
-                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (?, ?, ?, ?, ?)",
-                    (date_str, "Business Expenses / Suppliers", amount, 0, f"Expense: {category} - {party_name}")
+                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (:d, :an, :deb, :cred, :narr)",
+                    {"d": date_str, "an": "Business Expenses / Suppliers", "deb": amount, "cred": 0, "narr": f"Expense: {category} - {party_name}"}
                 )
                 execute_db(
-                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (?, ?, ?, ?, ?)",
-                    (date_str, "Bank/Cash Account", 0, amount, f"Paid {amount} for {category}")
+                    "INSERT INTO ledger (date, account_name, debit, credit, narration) VALUES (:d, :an, :deb, :cred, :narr)",
+                    {"d": date_str, "an": "Bank/Cash Account", "deb": 0, "cred": amount, "narr": f"Paid {amount} for {category}"}
                 )
                 st.success("Expense saved successfully!")
 
@@ -372,12 +380,12 @@ elif st.session_state.nav == "View My Business":
             if bookings_df.empty:
                 st.info("No bookings available to delete.")
             else:
-                b_map = {f"ID #{r.id} | {r.customer_name} - {r.trip_name} (₹{r.total_amount:,.0f})": r.id for _, r in bookings_df.iterrows()}
+                b_map = {f"ID #{r['id']} | {r['customer_name']} - {r['trip_name']} (₹{r['total_amount']:,.0f})": int(r['id']) for _, r in bookings_df.iterrows()}
                 selected_label = st.selectbox("Select Booking to Delete", list(b_map.keys()))
                 del_id = b_map[selected_label]
                 
                 if st.button("🔴 Permanently Delete Selected Booking", type="primary"):
-                    execute_db("DELETE FROM bookings WHERE id = ?", (del_id,))
+                    execute_db("DELETE FROM bookings WHERE id = :id", {"id": del_id})
                     st.success(f"Booking #{del_id} deleted successfully!")
                     st.rerun()
 
@@ -386,12 +394,12 @@ elif st.session_state.nav == "View My Business":
             if tx_df.empty:
                 st.info("No transactions available to delete.")
             else:
-                t_map = {f"ID #{r.id} | {r.date} | {r.tx_type} | {r.party_name} - ₹{r.amount:,.0f}": r.id for _, r in tx_df.iterrows()}
+                t_map = {f"ID #{r['id']} | {r['date']} | {r['tx_type']} | {r['party_name']} - ₹{r['amount']:,.0f}": int(r['id']) for _, r in tx_df.iterrows()}
                 selected_label = st.selectbox("Select Transaction to Delete", list(t_map.keys()))
                 del_id = t_map[selected_label]
                 
                 if st.button("🔴 Permanently Delete Selected Transaction", type="primary"):
-                    execute_db("DELETE FROM transactions WHERE id = ?", (del_id,))
+                    execute_db("DELETE FROM transactions WHERE id = :id", {"id": del_id})
                     st.success(f"Transaction #{del_id} deleted successfully!")
                     st.rerun()
 
@@ -400,12 +408,12 @@ elif st.session_state.nav == "View My Business":
             if ledger_df.empty:
                 st.info("No ledger entries available to delete.")
             else:
-                l_map = {f"ID #{r.id} | {r.date} | {r.account_name} | {r.narration}": r.id for _, r in ledger_df.iterrows()}
+                l_map = {f"ID #{r['id']} | {r['date']} | {r['account_name']} | {r['narration']}": int(r['id']) for _, r in ledger_df.iterrows()}
                 selected_label = st.selectbox("Select Ledger Entry to Delete", list(l_map.keys()))
                 del_id = l_map[selected_label]
                 
                 if st.button("🔴 Permanently Delete Selected Ledger Record", type="primary"):
-                    execute_db("DELETE FROM ledger WHERE id = ?", (del_id,))
+                    execute_db("DELETE FROM ledger WHERE id = :id", {"id": del_id})
                     st.success(f"Ledger record #{del_id} deleted successfully!")
                     st.rerun()
 
