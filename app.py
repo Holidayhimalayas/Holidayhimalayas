@@ -472,6 +472,6 @@ elif st.session_state.nav == "Accountant & Advanced Reports":
     if not ledger_df.empty:
         st.dataframe(ledger_df)
         csv = ledger_df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download Accountant Ledger (CSV)", csv, "accountant_ledger.csv", "mime/csv")
+        st.download_button("Download Accountant Ledger (CSV)", csv, "accountant_ledger.csv", "text/csv")
     else:
         st.info("Ledger is empty.")
